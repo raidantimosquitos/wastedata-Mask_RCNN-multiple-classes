@@ -906,3 +906,93 @@ def resize(image, output_shape, order=1, mode='constant', cval=0, clip=True,
             image, output_shape,
             order=order, mode=mode, cval=cval, clip=clip,
             preserve_range=preserve_range)
+
+def get_iou(a, b, epsilon=1e-5): 
+    """ Given two boxes a and b defined as a list of four numbers [x1,y1,x2,y2] where:
+        x1,y1 represent the upper left corner
+        x2,y2 represent the lower right corner
+    It returns the Intersect of Union score for these two boxes.
+
+    Args: 
+        a:          (list of 4 numbers) [x1,y1,x2,y2]
+        b:          (list of 4 numbers) [x1,y1,x2,y2]
+        epsilon:    (float) Small value to prevent division by zero
+
+    Returns:
+        (float) The Intersect of Union score.
+    """
+    # COORDINATES OF THE INTERSECTION BOX
+    x1 = max(a[0], b[0])
+    y1 = max(a[1], b[1])
+    x2 = min(a[2], b[2])
+    y2 = min(a[3], b[3])
+
+    # AREA OF OVERLAP - Area where the boxes intersect
+    width = (x2 - x1)
+    height = (y2 - y1)
+    # handle case where there is NO overlap
+    if (width<0) or (height <0):
+        return 0.0
+    area_overlap = width * height
+
+    # COMBINED AREA
+    area_a = (a[2] - a[0]) * (a[3] - a[1])
+    area_b = (b[2] - b[0]) * (b[3] - b[1])
+    area_combined = area_a + area_b - area_overlap
+
+    # RATIO OF AREA OF OVERLAP OVER COMBINED AREA
+    iou = area_overlap / (area_combined+epsilon)
+    return iou
+
+
+def gt_pred_lists(gt_class_ids, gt_bboxes, pred_class_ids, pred_bboxes, iou_tresh = 0.5):
+    """ Given a list of gt and predicted classes and their boxes, 
+    this function associates the predicted classes to their gt classes using a given Iou (Iou>= 0.5 for example) and returns 
+    two normalized lists of len = N containing the gt and predicted classes, 
+    filling the non-predicted and miss-predicted classes by the background instance (index 0).
+
+    Args    :
+        gt_class_ids   :    list of gt classes of size N1
+        pred_class_ids :    list of predicted classes of size N2
+        gt_bboxes      :    list of gt boxes [N1, (x1, y1, x2, y2)]
+        pred_bboxes    :    list of pred boxes [N2, (x1, y1, x2, y2)]
+        
+    Returns : 
+        gt             :    list of size N
+        pred           :    list of size N 
+    """
+    #dict containing the state of each gt and predicted class (0 : not associated to any other class, 1 : associated to a classe)
+    gt_class_ids_ = {'state' : [0*i for i in range(len(gt_class_ids))], "gt_class_ids":list(gt_class_ids)}
+    pred_class_ids_ = {'state' : [0*i for i in range(len(pred_class_ids))], "pred_class_ids":list(pred_class_ids)}
+
+    #the two lists to be returned
+    pred=[]
+    gt=[]
+
+    for i, gt_class in enumerate(gt_class_ids_["gt_class_ids"]):
+        for j, pred_class in enumerate(pred_class_ids_['pred_class_ids']): 
+            #check if the gt object is overlapping with a predicted object
+            if get_iou(gt_bboxes[i], pred_bboxes[j])>=iou_tresh:
+                #change the state of the gt and predicted class when an overlapping is found
+                gt_class_ids_['state'][i] = 1
+                pred_class_ids_['state'][j] = 1
+                #chack if the overlapping objects are from the same class
+                if (gt_class == pred_class):
+                    gt.append(gt_class)
+                    pred.append(pred_class)
+                #if the overlapping objects are not from the same class 
+                else : 
+                    gt.append(gt_class)
+                    pred.append(pred_class)
+    #look for objects that are not predicted (gt objects that dont exists in pred objects)
+    for i, gt_class in enumerate(gt_class_ids_["gt_class_ids"]):
+        if gt_class_ids_['state'][i] == 0:
+            gt.append(gt_class)
+            pred.append(0)
+            #match_id += 1
+    #look for objects that are mispredicted (pred objects that dont exists in gt objects)
+    for j, pred_class in enumerate(pred_class_ids_["pred_class_ids"]):
+        if pred_class_ids_['state'][j] == 0:
+            gt.append(0)
+            pred.append(pred_class)
+    return gt, pred
