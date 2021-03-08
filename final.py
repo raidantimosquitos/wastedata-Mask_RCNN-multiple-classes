@@ -226,7 +226,6 @@ def color_splash(image, mask):
         splash = gray
     return splash
 
-
 def detect_and_color_splash(model, image_path=None, video_path=None):
     assert image_path or video_path
 
